@@ -16,7 +16,7 @@ const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
 export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) {
-  const { data, completeDeal, extendDeadline, checkDeadlines } = useApp();
+  const { data, completeDeal, extendDeadline, checkDeadlines, myConfirmedSide } = useApp();
   const user = data.currentUser;
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -30,7 +30,7 @@ export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) 
   const myDeals = useMemo(() => {
     if (!user) return [];
     return data.deals
-      .filter(d => d.businessA === user.name || d.businessB === user.name)
+      .filter(d => d.businessAId === user.id || d.businessBId === user.id)
       .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
   }, [data.deals, user]);
 
@@ -79,7 +79,7 @@ export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) 
     active: myDeals.filter(d => d.status !== 'completed' && d.status !== 'overdue' && new Date(d.deadline) >= today).length,
     overdue: myDeals.filter(d => d.status === 'overdue' || (d.status !== 'completed' && new Date(d.deadline) < today)).length,
     completed: myDeals.filter(d => d.status === 'completed').length,
-    pendingConfirm: myDeals.filter(d => d.status !== 'completed' && d.status !== 'overdue' && (d.userConfirmedCompletion === true && !d.confirmedB)).length,
+    pendingConfirm: myDeals.filter(d => d.status !== 'completed' && d.status !== 'overdue' && myConfirmedSide(d) && !(d.confirmedA && d.confirmedB)).length,
   };
 
   return (
@@ -217,12 +217,12 @@ export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) 
               </div>
             ) : (
               filteredDeals.map(deal => {
-                const partner = deal.businessA === user.name ? deal.businessB : deal.businessA;
+                const partner = deal.businessAId === user.id ? deal.businessBName : deal.businessAName;
                 const dlDate = new Date(deal.deadline);
                 dlDate.setHours(0, 0, 0, 0);
                 const diffDays = Math.round((dlDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                 const isOverdue = deal.status === 'overdue' || (deal.status !== 'completed' && diffDays < 0);
-                const myConfirmed = deal.userConfirmedCompletion === true;
+                const myConfirmed = myConfirmedSide(deal);
                 const bothConfirmed = deal.confirmedA && deal.confirmedB;
                 const hasChat = data.chats.some(c => c.dealId === deal.id);
                 const effectiveStatus = isOverdue ? 'overdue' : deal.status;
@@ -308,7 +308,7 @@ export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) 
                         <div className="flex flex-wrap gap-2">
                           {effectiveStatus !== 'completed' && effectiveStatus !== 'overdue' && (
                             <button
-                              onClick={() => completeDeal(deal.id, 'A')}
+                              onClick={() => completeDeal(deal.id)}
                               disabled={myConfirmed}
                               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
                                 myConfirmed
@@ -323,7 +323,7 @@ export default function CalendarPage({ onBack, onOpenChat }: CalendarPageProps) 
 
                           {effectiveStatus === 'overdue' && !myConfirmed && (
                             <button
-                              onClick={() => completeDeal(deal.id, 'A')}
+                              onClick={() => completeDeal(deal.id)}
                               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-all"
                             >
                               <CheckCircle2 size={14} />

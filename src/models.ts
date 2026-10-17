@@ -19,8 +19,12 @@ export interface BusinessCard {
 
 export interface Deal {
   id: string;
-  businessA: string;
-  businessB: string;
+  // связь по id (profiles.id), а не по имени бизнеса
+  businessAId: string;
+  businessBId: string;
+  // имена подтягиваются join'ом из profiles — только для отображения
+  businessAName: string;
+  businessBName: string;
   type: string;
   description: string;
   deadline: string;
@@ -30,7 +34,6 @@ export interface Deal {
   dateCreated: string;
   templateName?: string;
   extended?: boolean;
-  userConfirmedCompletion?: boolean;
 }
 
 export interface ChatMessage {
@@ -62,7 +65,6 @@ export interface UserProfile {
   dealsTotal: number;
   weeklyQuota: number;
   weeklyUsed: number;
-  offersCreated: string[];
 }
 
 export interface AppData {

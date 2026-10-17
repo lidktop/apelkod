@@ -10,7 +10,8 @@ interface AuthDialogProps {
 }
 
 export default function AuthDialog({ mode, onClose, onSwitch }: AuthDialogProps) {
-  const { register } = useApp();
+  const { register, login, authError } = useApp();
+  const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,7 +25,7 @@ export default function AuthDialog({ mode, onClose, onSwitch }: AuthDialogProps)
 
   const isRegister = mode === 'register';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -33,35 +34,44 @@ export default function AuthDialog({ mode, onClose, onSwitch }: AuthDialogProps)
         setError('Заполните все обязательные поля.');
         return;
       }
+      if (password.trim().length < 6) {
+        setError('Пароль должен быть не короче 6 символов.');
+        return;
+      }
       if (!agreed) {
         setError('Необходимо принять пользовательское соглашение.');
         return;
       }
-      register({
-        name: name.trim(),
-        email: email.trim(),
-        city: city.trim(),
-        sphere: sphere.trim(),
-        audience: parseInt(audience) || 0,
-        engagement: 0,
-        description: description.trim(),
-      });
+      setSubmitting(true);
+      try {
+        await register({
+          name: name.trim(),
+          email: email.trim(),
+          password: password.trim(),
+          city: city.trim(),
+          sphere: sphere.trim(),
+          audience: parseInt(audience) || 0,
+          engagement: 0,
+          description: description.trim(),
+        });
+      } catch {
+        setSubmitting(false);
+        return;
+      }
     } else {
       if (!email.trim() || !password.trim()) {
         setError('Введите email и пароль.');
         return;
       }
-      // Demo login — create a basic profile
-      register({
-        name: email.split('@')[0],
-        email: email.trim(),
-        city: 'Москва',
-        sphere: 'Общепит',
-        audience: 10000,
-        engagement: 5,
-        description: 'Демо-аккаунт',
-      });
+      setSubmitting(true);
+      try {
+        await login(email.trim(), password.trim());
+      } catch {
+        setSubmitting(false);
+        return;
+      }
     }
+    setSubmitting(false);
     onClose();
   };
 
@@ -136,23 +146,23 @@ export default function AuthDialog({ mode, onClose, onSwitch }: AuthDialogProps)
             </>
           )}
 
-          {error && (
+          {(error || authError) && (
             <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
               <AlertCircle size={16} />
-              {error}
+              {error || authError}
             </div>
           )}
 
           <button
             type="submit"
-            disabled={isRegister && !agreed}
+            disabled={(isRegister && !agreed) || submitting}
             className={`w-full py-3 font-semibold rounded-xl transition-all ${
-              isRegister && !agreed
+              (isRegister && !agreed) || submitting
                 ? 'bg-ink-700 text-neutral-600 cursor-not-allowed'
                 : 'bg-orange-500 text-white hover:bg-orange-600 hover:scale-[1.02] glow-orange'
             }`}
           >
-            {isRegister ? 'Зарегистрироваться' : 'Войти'}
+            {submitting ? 'Подождите…' : isRegister ? 'Зарегистрироваться' : 'Войти'}
           </button>
         </form>
 

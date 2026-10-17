@@ -17,12 +17,12 @@ export default function OfferDialog({ onClose }: OfferDialogProps) {
   const [engagement, setEngagement] = useState('5');
   const [error, setError] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim() || !city.trim() || !sphere.trim() || !description.trim()) {
       setError('Заполните все поля.');
       return;
     }
-    createOffer({
+    await createOffer({
       name: name.trim(),
       city: city.trim(),
       sphere: sphere.trim(),

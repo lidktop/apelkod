@@ -1,24 +1,6 @@
-import type { BusinessCard, Deal } from '@/models';
-
-export const seedOffers: BusinessCard[] = [
-  { id: 'o1', name: 'Кофейня «Зерно»', city: 'Москва', sphere: 'Общепит', type: 'Бартер', description: 'Пост о вашем бренде в Instagram (18 тыс. подписчиков). Ищем партнёра для обмена контентом.', audience: 18000, engagement: 4.2, rating: 100, dealsCompleted: 12, dealsTotal: 12, owner: 'Анна К.' },
-  { id: 'o2', name: 'Студия йоги «Дыxание»', city: 'Санкт-Петербург', sphere: 'Фитнес', type: 'Бартер', description: 'Упоминание в сторис + репост. Ищем кросс-промо с косметикой или едой.', audience: 9500, engagement: 5.8, rating: 92, dealsCompleted: 11, dealsTotal: 12, owner: 'Мария В.' },
-  { id: 'o3', name: 'Бренд «Тёплый дом»', city: 'Москва', sphere: 'Одежда', type: 'Коллаборация', description: 'Совместный набор: свитер + кофе. Готовы к долгосрочному партнёрству.', audience: 24000, engagement: 3.6, rating: 88, dealsCompleted: 7, dealsTotal: 8, owner: 'Дмитрий П.' },
-  { id: 'o4', name: 'Цветочная «Пион»', city: 'Казань', sphere: 'Цветы', type: 'Бартер', description: 'Обмен постами и сторис. Ищем фотографа или свадебного организатора.', audience: 6200, engagement: 7.1, rating: 100, dealsCompleted: 5, dealsTotal: 5, owner: 'Лена С.' },
-  { id: 'o5', name: 'Крафтовая пекарня «Мякиш»', city: 'Екатеринбург', sphere: 'Общепит', type: 'Бартер', description: 'Розыгрыш набора выпечки у нас — упоминание вашего бренда. 12 тыс. охват.', audience: 12000, engagement: 6.3, rating: 75, dealsCompleted: 3, dealsTotal: 4, owner: 'Игорь Л.' },
-  { id: 'o6', name: 'Фотостудия «Свет»', city: 'Москва', sphere: 'Услуги', type: 'Коллаборация', description: 'Бесплатная съёмка для вашего бренда — вы упоминаете студию. Ищем одежду или декор.', audience: 15000, engagement: 4.9, rating: 95, dealsCompleted: 9, dealsTotal: 10, owner: 'Сергей М.' },
-  { id: 'o7', name: 'Косметика «Нежность»', city: 'Новосибирск', sphere: 'Красота', type: 'Бартер', description: 'Обмен постами в Instagram. Ищем блогеров или салоны красоты.', audience: 21000, engagement: 5.2, rating: 100, dealsCompleted: 8, dealsTotal: 8, owner: 'Ольга Р.' },
-  { id: 'o8', name: 'Книжный «Стопка»', city: 'Санкт-Петербург', sphere: 'Розница', type: 'Коллаборация', description: 'Совместный розыгрыш книг и вашего товара. Ищем кофейни или косметику.', audience: 8000, engagement: 6.8, rating: 83, dealsCompleted: 5, dealsTotal: 6, owner: 'Катя Д.' },
-  { id: 'o9', name: 'Кондитерская «Сладость»', city: 'Казань', sphere: 'Общепит', type: 'Бартер', description: 'Тортик на ваш ивент — вы про нас в сторис. Ищем ивент-агентства.', audience: 5500, engagement: 8.2, rating: 90, dealsCompleted: 6, dealsTotal: 7, owner: 'Юля А.' },
-];
-
-export const seedDeals: Deal[] = [
-  { id: 'd1', businessA: 'Кофейня «Зерно»', businessB: 'Студия йоги «Дыxание»', type: 'Обмен постами', description: 'Кофейня публикует пост о йога-студии, студия — о кофейне. Срок: 5 дней.', deadline: '2026-10-12', status: 'completed', confirmedA: true, confirmedB: true, dateCreated: '2026-10-01' },
-  { id: 'd2', businessA: 'Бренд «Тёплый дом»', businessB: 'Кофейня «Зерно»', type: 'Совместный набор', description: 'Свитер + кофе — совместный пост. Срок: 7 дней.', deadline: '2026-10-15', status: 'active', confirmedA: true, confirmedB: true, dateCreated: '2026-10-05' },
-  { id: 'd3', businessA: 'Цветочная «Пион»', businessB: 'Фотостудия «Свет»', type: 'Обмен постами', description: 'Фото букета в студии — сторис с упоминанием. Срок: 3 дня.', deadline: '2026-10-10', status: 'completed', confirmedA: true, confirmedB: true, dateCreated: '2026-09-28' },
-  { id: 'd4', businessA: 'Косметика «Нежность»', businessB: 'Книжный «Стопка»', type: 'Совместный розыгрыш', description: 'Розыгрыш: крем + книга. Условия в постах. Срок: 10 дней.', deadline: '2026-10-18', status: 'active', confirmedA: true, confirmedB: true, dateCreated: '2026-10-06' },
-  { id: 'd5', businessA: 'Крафтовая пекарня «Мякиш»', businessB: 'Кондитерская «Сладость»', type: 'Кросс-промо в сторис', description: 'Взаимные сторис с упоминанием. Срок: 2 дня.', deadline: '2026-10-09', status: 'completed', confirmedA: true, confirmedB: true, dateCreated: '2026-09-30' },
-];
+// Каталог (profiles) и сделки (deals) теперь приходят из Supabase — см. AppState.tsx.
+// Здесь остались только статичные справочники и декоративная карта сделок
+// (демо-иллюстрация "бартерного следа" на лендинге, не связана с реальными данными).
 
 export const seedDealMap = [
   { a: 'Кофейня «Зерно»', b: 'Студия йоги «Дыxание»', type: 'Обмен постами', date: '15.10.2026' },

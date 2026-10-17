@@ -18,7 +18,7 @@ export default function ProfilePage({ onBack, onOpenCalendar }: ProfilePageProps
 
   if (!user) return null;
 
-  const myDeals = data.deals.filter(d => d.businessA === user.name || d.businessB === user.name);
+  const myDeals = data.deals.filter(d => d.businessAId === user.id || d.businessBId === user.id);
   const rating = user.dealsTotal > 0 ? Math.round((user.dealsCompleted / user.dealsTotal) * 100) : 100;
   const quotaLeft = user.weeklyQuota - user.weeklyUsed;
 
@@ -94,7 +94,7 @@ export default function ProfilePage({ onBack, onOpenCalendar }: ProfilePageProps
                     {(() => {
                       const upcoming = sortedDeals.find(d => d.status !== 'completed' && new Date(d.deadline) >= today);
                       if (!upcoming) return <span className="text-sm text-neutral-500">Нет активных дедлайнов</span>;
-                      const partner = upcoming.businessA === user.name ? upcoming.businessB : upcoming.businessA;
+                      const partner = upcoming.businessAId === user.id ? upcoming.businessBName : upcoming.businessAName;
                       const dl = new Date(upcoming.deadline);
                       const days = Math.ceil((dl.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                       return (

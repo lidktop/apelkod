@@ -1,28 +1,148 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import type { UserProfile, BusinessCard, Deal, ChatThread, AppData, DealType, DealStatus } from '@/models';
-import { seedOffers, seedDeals, seedDealMap, botResponses } from '@/mockData';
-
-const STORAGE_KEY = 'apelkod_data_v1';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import type { UserProfile, BusinessCard, Deal, ChatThread, AppData, DealType } from '@/models';
+import { seedDealMap, botResponses } from '@/mockData';
 
 const emptyData: AppData = {
   currentUser: null,
-  offers: seedOffers,
-  deals: seedDeals,
+  offers: [],
+  deals: [],
   chats: [],
   dealMapConnections: seedDealMap,
 };
 
+type ProfileRow = {
+  id: string;
+  user_id: string | null;
+  name: string;
+  email: string | null;
+  city: string;
+  sphere: string;
+  type: DealType;
+  description: string;
+  audience: number;
+  engagement: number;
+  rating: number;
+  deals_completed: number;
+  deals_total: number;
+  owner: string;
+  dolki: number;
+  weekly_quota: number;
+  weekly_used: number;
+  is_published: boolean;
+};
+
+type DealRow = {
+  id: string;
+  business_a_id: string;
+  business_b_id: string;
+  business_a: { name: string } | null;
+  business_b: { name: string } | null;
+  type: string;
+  description: string;
+  deadline: string;
+  status: Deal['status'];
+  confirmed_a: boolean;
+  confirmed_b: boolean;
+  extended: boolean;
+  template_name: string | null;
+  created_at: string;
+};
+
+type ThreadRow = { id: string; deal_id: string };
+type MessageRow = { id: string; thread_id: string; sender_id: string | null; body: string; created_at: string };
+
+function profileToCard(p: ProfileRow): BusinessCard {
+  return {
+    id: p.id,
+    name: p.name,
+    city: p.city,
+    sphere: p.sphere,
+    type: p.type,
+    description: p.description,
+    audience: p.audience,
+    engagement: p.engagement,
+    rating: p.rating,
+    dealsCompleted: p.deals_completed,
+    dealsTotal: p.deals_total,
+    owner: p.owner,
+  };
+}
+
+function profileToUser(p: ProfileRow): UserProfile {
+  return {
+    id: p.id,
+    name: p.name,
+    email: p.email ?? '',
+    city: p.city,
+    sphere: p.sphere,
+    audience: p.audience,
+    engagement: p.engagement,
+    description: p.description,
+    dolki: p.dolki,
+    dealsCompleted: p.deals_completed,
+    dealsTotal: p.deals_total,
+    weeklyQuota: p.weekly_quota,
+    weeklyUsed: p.weekly_used,
+  };
+}
+
+function dealRowToDeal(d: DealRow): Deal {
+  return {
+    id: d.id,
+    businessAId: d.business_a_id,
+    businessBId: d.business_b_id,
+    businessAName: d.business_a?.name ?? '—',
+    businessBName: d.business_b?.name ?? '—',
+    type: d.type,
+    description: d.description,
+    deadline: d.deadline,
+    status: d.status,
+    confirmedA: d.confirmed_a,
+    confirmedB: d.confirmed_b,
+    dateCreated: d.created_at.split('T')[0],
+    templateName: d.template_name ?? undefined,
+    extended: d.extended,
+  };
+}
+
+interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+  city: string;
+  sphere: string;
+  audience: number;
+  engagement: number;
+  description: string;
+}
+
+interface CreateOfferInput {
+  name: string;
+  city: string;
+  sphere: string;
+  type: DealType;
+  description: string;
+  audience: number;
+  engagement: number;
+}
+
 interface AppStateValue {
   data: AppData;
-  register: (profile: Omit<UserProfile, 'id' | 'dolki' | 'dealsCompleted' | 'dealsTotal' | 'weeklyQuota' | 'weeklyUsed' | 'offersCreated'>) => void;
+  loading: boolean;
+  authError: string;
+  register: (profile: RegisterInput) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  createOffer: (offer: Omit<BusinessCard, 'id' | 'rating' | 'dealsCompleted' | 'dealsTotal' | 'owner'>) => void;
-  createDeal: (offer: BusinessCard, templateName?: string, terms?: string) => void;
-  confirmDeal: (dealId: string, side: 'A' | 'B') => void;
-  completeDeal: (dealId: string, side: 'A' | 'B') => void;
-  extendDeadline: (dealId: string) => void;
-  sendMessage: (chatId: string, text: string) => void;
-  markChatRead: (chatId: string) => void;
+  createOffer: (offer: CreateOfferInput) => Promise<void>;
+  createDeal: (offer: BusinessCard, templateName?: string, terms?: string) => Promise<void>;
+  confirmDeal: (dealId: string) => Promise<void>;
+  completeDeal: (dealId: string) => Promise<void>;
+  extendDeadline: (dealId: string) => Promise<void>;
+  sendMessage: (threadId: string, text: string) => Promise<void>;
+  markChatRead: (threadId: string) => void;
+  myConfirmedSide: (deal: Deal) => boolean;
   unreadChatsCount: number;
   urgentDealsCount: number;
   notifications: string[];
@@ -33,225 +153,266 @@ interface AppStateValue {
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return { ...emptyData, ...JSON.parse(stored) };
-    } catch { /* ignore */ }
-    return emptyData;
-  });
+  const [data, setData] = useState<AppData>(emptyData);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
   const [notifications, setNotifications] = useState<string[]>([]);
-
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
-  }, [data]);
+  const [session, setSession] = useState<Session | null>(null);
+  const myProfileId = useRef<string | null>(null);
+  const seenThreads = useRef<Set<string>>(new Set());
 
   const pushNotification = useCallback((msg: string) => {
     setNotifications(prev => [...prev, msg]);
   }, []);
 
-  const register: AppStateValue['register'] = useCallback((profile) => {
-    const user: UserProfile = {
-      ...profile,
-      id: 'u_' + Date.now(),
-      dolki: 5,
-      dealsCompleted: 0,
-      dealsTotal: 0,
-      weeklyQuota: 3,
-      weeklyUsed: 0,
-      offersCreated: [],
+  const loadCatalog = useCallback(async () => {
+    const { data: rows, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('is_published', true)
+      .order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setData(prev => ({ ...prev, offers: (rows as ProfileRow[]).map(profileToCard) }));
+  }, []);
+
+  const loadDeals = useCallback(async () => {
+    const { data: rows, error } = await supabase
+      .from('deals')
+      .select('*, business_a:profiles!business_a_id(name), business_b:profiles!business_b_id(name)')
+      .order('deadline', { ascending: true });
+    if (error) { console.error(error); return; }
+    setData(prev => ({ ...prev, deals: (rows as unknown as DealRow[]).map(dealRowToDeal) }));
+  }, []);
+
+  const loadChats = useCallback(async () => {
+    const [{ data: threads, error: tErr }, { data: messages, error: mErr }] = await Promise.all([
+      supabase.from('chat_threads').select('*'),
+      supabase.from('chat_messages').select('*').order('created_at', { ascending: true }),
+    ]);
+    if (tErr || mErr) { console.error(tErr ?? mErr); return; }
+
+    setData(prev => {
+      const chats: ChatThread[] = (threads as ThreadRow[]).map(t => {
+        const deal = prev.deals.find(d => d.id === t.deal_id);
+        const partnerName = deal
+          ? (deal.businessAId === myProfileId.current ? deal.businessBName : deal.businessAName)
+          : '—';
+        const msgs = (messages as MessageRow[])
+          .filter(m => m.thread_id === t.id)
+          .map(m => ({
+            id: m.id,
+            sender: (m.sender_id === myProfileId.current ? 'user' : 'bot') as 'user' | 'bot',
+            text: m.body,
+            time: new Date(m.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+          }));
+        const lastMsg = msgs[msgs.length - 1];
+        const unread = !!lastMsg && lastMsg.sender === 'bot' && !seenThreads.current.has(t.id);
+        return { id: t.id, dealId: t.deal_id, businessName: partnerName, messages: msgs, unread };
+      });
+      return { ...prev, chats };
+    });
+  }, []);
+
+  const loadNotifications = useCallback(async () => {
+    const { data: rows, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('is_read', false)
+      .order('created_at', { ascending: true });
+    if (error) { console.error(error); return; }
+    setNotifications((rows as { text: string }[]).map(r => r.text));
+  }, []);
+
+  const loadOwnProfile = useCallback(async (userId: string) => {
+    const { data: row, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    if (error || !row) { console.error(error); return; }
+    const profile = row as ProfileRow;
+    myProfileId.current = profile.id;
+    setData(prev => ({ ...prev, currentUser: profileToUser(profile) }));
+    await Promise.all([loadDeals(), loadNotifications()]);
+    await loadChats();
+  }, [loadDeals, loadChats, loadNotifications]);
+
+  // сессия + realtime
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+
+    loadCatalog().finally(() => setLoading(false));
+
+    return () => {
+      sub.subscription.unsubscribe();
+      if (channel) supabase.removeChannel(channel);
     };
-    setData(prev => ({ ...prev, currentUser: user }));
+  }, [loadCatalog]);
+
+  useEffect(() => {
+    if (session?.user) {
+      loadOwnProfile(session.user.id);
+    } else {
+      myProfileId.current = null;
+      setData(prev => ({ ...prev, currentUser: null, deals: [], chats: [] }));
+    }
+  }, [session, loadOwnProfile]);
+
+  // реалтайм: новые уведомления и сообщения в чатах
+  useEffect(() => {
+    if (!session?.user) return;
+    const channel = supabase
+      .channel('apelkod-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
+        const row = payload.new as { text: string };
+        pushNotification(row.text);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, () => {
+        loadChats();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session, pushNotification, loadChats]);
+
+  const register = useCallback(async (profile: RegisterInput) => {
+    setAuthError('');
+    const { data: signUpData, error } = await supabase.auth.signUp({
+      email: profile.email,
+      password: profile.password,
+      options: { data: { name: profile.name, city: profile.city, sphere: profile.sphere, description: profile.description } },
+    });
+    if (error) { setAuthError(error.message); throw error; }
+    if (signUpData.user) {
+      await supabase.from('profiles').update({ audience: profile.audience, engagement: profile.engagement }).eq('user_id', signUpData.user.id);
+    }
+    if (!signUpData.session) {
+      setAuthError('Проверьте почту и подтвердите email, затем войдите.');
+    }
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { setAuthError(error.message); throw error; }
   }, []);
 
   const logout = useCallback(() => {
-    setData(prev => ({ ...prev, currentUser: null }));
+    supabase.auth.signOut();
   }, []);
 
-  const createOffer: AppStateValue['createOffer'] = useCallback((offer) => {
-    const newOffer: BusinessCard = {
-      ...offer,
-      id: 'o_' + Date.now(),
-      rating: 100,
-      dealsCompleted: 0,
-      dealsTotal: 0,
-      owner: data.currentUser?.name ?? 'Вы',
-    };
-    setData(prev => ({
-      ...prev,
-      offers: [newOffer, ...prev.offers],
-      currentUser: prev.currentUser
-        ? { ...prev.currentUser, offersCreated: [...prev.currentUser.offersCreated, newOffer.id] }
-        : prev.currentUser,
-    }));
+  const createOffer = useCallback(async (offer: CreateOfferInput) => {
+    if (!session?.user) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        name: offer.name, city: offer.city, sphere: offer.sphere,
+        type: offer.type, description: offer.description,
+        audience: offer.audience, engagement: offer.engagement,
+        is_published: true,
+      })
+      .eq('user_id', session.user.id);
+    if (error) { console.error(error); return; }
+    await Promise.all([loadCatalog(), loadOwnProfile(session.user.id)]);
     pushNotification('Предложение опубликовано в каталоге.');
-  }, [data.currentUser, pushNotification]);
+  }, [session, loadCatalog, loadOwnProfile, pushNotification]);
 
-  const createDeal: AppStateValue['createDeal'] = useCallback((offer, templateName, terms) => {
-    const userName = data.currentUser?.name ?? 'Вы';
+  const createDeal = useCallback(async (offer: BusinessCard, templateName?: string, terms?: string) => {
+    if (!myProfileId.current) return;
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + 5);
-    const deal: Deal = {
-      id: 'd_' + Date.now(),
-      businessA: userName,
-      businessB: offer.name,
-      type: templateName ?? offer.type,
-      description: terms ?? offer.description,
-      deadline: deadline.toISOString().split('T')[0],
-      status: 'confirmed',
-      confirmedA: true,
-      confirmedB: true,
-      dateCreated: new Date().toISOString().split('T')[0],
-      templateName,
-    };
-    const chat: ChatThread = {
-      id: 'c_' + Date.now(),
-      dealId: deal.id,
-      businessName: offer.name,
-      messages: [{
-        id: 'm_' + Date.now(),
-        sender: 'bot',
-        text: botResponses[0],
-        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-      }],
-      unread: true,
-    };
-    setData(prev => ({
-      ...prev,
-      deals: [deal, ...prev.deals],
-      chats: [chat, ...prev.chats],
-      dealMapConnections: [{ a: userName, b: offer.name, type: deal.type, date: new Date().toLocaleDateString('ru-RU') }, ...prev.dealMapConnections],
-      currentUser: prev.currentUser
-        ? { ...prev.currentUser, weeklyUsed: prev.currentUser.weeklyUsed + 1 }
-        : prev.currentUser,
-    }));
+
+    const { data: inserted, error } = await supabase
+      .from('deals')
+      .insert({
+        business_a_id: myProfileId.current,
+        business_b_id: offer.id,
+        type: templateName ?? offer.type,
+        description: terms ?? offer.description,
+        deadline: deadline.toISOString().split('T')[0],
+        template_name: templateName ?? null,
+      })
+      .select('id')
+      .single();
+    if (error || !inserted) { console.error(error); return; }
+    const dealId = (inserted as { id: string }).id;
+
+    // я сразу подтверждаю условия своей стороной
+    await supabase.rpc('confirm_deal', { p_deal: dealId });
+    // если партнёр — демо-бизнес без аккаунта, он подтверждает автоматически
+    await supabase.rpc('auto_confirm_demo_partner', { p_deal: dealId });
+
+    const { data: thread } = await supabase.from('chat_threads').insert({ deal_id: dealId }).select('id').single();
+    if (thread) {
+      const threadId = (thread as { id: string }).id;
+      // если партнёр демо — он сразу пишет первое сообщение
+      await supabase.rpc('send_bot_reply', { p_thread: threadId, p_text: botResponses[0] }).then(
+        () => {},
+        () => {} // у партнёра настоящий аккаунт — функция откажет, это ожидаемо
+      );
+    }
+
+    await Promise.all([loadDeals(), loadChats()]);
     pushNotification(`Сделка с «${offer.name}» зафиксирована. Открылся чат — партнёр написал вам.`);
-  }, [data.currentUser, pushNotification]);
+  }, [loadDeals, loadChats, pushNotification]);
 
-  const confirmDeal: AppStateValue['confirmDeal'] = useCallback((dealId, side) => {
-    setData(prev => ({
-      ...prev,
-      deals: prev.deals.map(d => {
-        if (d.id !== dealId) return d;
-        const updated = { ...d };
-        if (side === 'A') updated.confirmedA = true;
-        if (side === 'B') updated.confirmedB = true;
-        if (updated.confirmedA && updated.confirmedB) updated.status = 'active';
-        return updated;
-      }),
-    }));
-  }, []);
+  const confirmDeal = useCallback(async (dealId: string) => {
+    const { error } = await supabase.rpc('confirm_deal', { p_deal: dealId });
+    if (error) { console.error(error); return; }
+    await loadDeals();
+    if (session?.user) await loadOwnProfile(session.user.id);
+    await loadCatalog();
+  }, [loadDeals, loadOwnProfile, loadCatalog, session]);
 
-  const completeDeal: AppStateValue['completeDeal'] = useCallback((dealId, side) => {
-    setData(prev => {
-      let completed = false;
-      let justMarked = false;
-      const updatedDeals = prev.deals.map(d => {
-        if (d.id !== dealId) return d;
-        const updated = { ...d };
-        if (side === 'A') {
-          if (!updated.confirmedA) justMarked = true;
-          updated.confirmedA = true;
-          updated.userConfirmedCompletion = true;
-        }
-        if (side === 'B') updated.confirmedB = true;
-        if (updated.confirmedA && updated.confirmedB && updated.status !== 'completed') {
-          updated.status = 'completed';
-          completed = true;
-        }
-        return updated;
-      });
-      const newDolki = completed ? 3 : 0;
-      return {
-        ...prev,
-        deals: updatedDeals,
-        currentUser: prev.currentUser && completed
-          ? { ...prev.currentUser, dolki: prev.currentUser.dolki + newDolki, dealsCompleted: prev.currentUser.dealsCompleted + 1, dealsTotal: prev.currentUser.dealsTotal + 1 }
-          : prev.currentUser,
-      };
-    });
-  }, []);
+  // «Подтвердить выполнение» и «подтвердить условия» — одна и та же серверная функция:
+  // confirm_deal сама решает, что менять, в зависимости от текущего статуса сделки.
+  const completeDeal = confirmDeal;
 
-  const extendDeadline: AppStateValue['extendDeadline'] = useCallback((dealId) => {
-    setData(prev => ({
-      ...prev,
-      deals: prev.deals.map(d => {
-        if (d.id !== dealId || d.extended) return d;
-        const dl = new Date(d.deadline);
-        dl.setDate(dl.getDate() + 3);
-        return { ...d, deadline: dl.toISOString().split('T')[0], extended: true };
-      }),
-    }));
-  }, []);
+  const extendDeadline = useCallback(async (dealId: string) => {
+    const { error } = await supabase.rpc('extend_deadline', { p_deal: dealId });
+    if (error) { console.error(error); return; }
+    await loadDeals();
+  }, [loadDeals]);
 
-  const checkDeadlines: AppStateValue['checkDeadlines'] = useCallback(() => {
-    if (!data.currentUser) return;
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const userName = data.currentUser.name;
-    const msgs: string[] = [];
+  const sendMessage = useCallback(async (threadId: string, text: string) => {
+    if (!myProfileId.current) return;
+    seenThreads.current.add(threadId);
+    const { error } = await supabase.from('chat_messages').insert({ thread_id: threadId, sender_id: myProfileId.current, body: text });
+    if (error) { console.error(error); return; }
+    await loadChats();
 
-    setData(prev => {
-      const updatedDeals = prev.deals.map(d => {
-        if (d.businessA !== userName && d.businessB !== userName) return d;
-        if (d.status === 'completed') return d;
-        const dl = new Date(d.deadline);
-        dl.setHours(0, 0, 0, 0);
-        const diffDays = Math.round((dl.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        const partner = d.businessA === userName ? d.businessB : d.businessA;
-
-        if (diffDays < 0 && d.status !== 'overdue') {
-          msgs.push(`Срок по сделке с «${partner}» истёк. Статус изменён на «Просрочено».`);
-          return { ...d, status: 'overdue' as DealStatus };
-        }
-        if (diffDays === 1) {
-          msgs.push(`Завтра срок по сделке с «${partner}». Не забудьте подтвердить выполнение.`);
-        }
-        if (diffDays === 0) {
-          msgs.push(`Сегодня дедлайн по сделке с «${partner}». Подтвердите выполнение!`);
-        }
-        return d;
-      });
-      return { ...prev, deals: updatedDeals };
-    });
-
-    msgs.forEach(m => pushNotification(m));
-  }, [data.currentUser, pushNotification]);
-
-  const sendMessage: AppStateValue['sendMessage'] = useCallback((chatId, text) => {
-    const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    setData(prev => ({
-      ...prev,
-      chats: prev.chats.map(c =>
-        c.id === chatId
-          ? { ...c, messages: [...c.messages, { id: 'm_' + Date.now(), sender: 'user', text, time: now }] }
-          : c
-      ),
-    }));
-    setTimeout(() => {
-      const botText = botResponses[Math.floor(Math.random() * botResponses.length)];
-      const botTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      setData(prev => ({
-        ...prev,
-        chats: prev.chats.map(c =>
-          c.id === chatId
-            ? { ...c, unread: false, messages: [...c.messages, { id: 'm_' + Date.now(), sender: 'bot', text: botText, time: botTime }] }
-            : c
-        ),
-      }));
+    // демо-партнёр отвечает с небольшой задержкой (если у него нет настоящего аккаунта)
+    setTimeout(async () => {
+      const reply = botResponses[Math.floor(Math.random() * botResponses.length)];
+      const { error: botErr } = await supabase.rpc('send_bot_reply', { p_thread: threadId, p_text: reply });
+      if (!botErr) await loadChats();
     }, 800 + Math.random() * 600);
+  }, [loadChats]);
+
+  const markChatRead = useCallback((threadId: string) => {
+    seenThreads.current.add(threadId);
+    setData(prev => ({ ...prev, chats: prev.chats.map(c => c.id === threadId ? { ...c, unread: false } : c) }));
   }, []);
 
-  const markChatRead = useCallback((chatId: string) => {
-    setData(prev => ({
-      ...prev,
-      chats: prev.chats.map(c => c.id === chatId ? { ...c, unread: false } : c),
-    }));
+  const myConfirmedSide = useCallback((deal: Deal) => {
+    if (!myProfileId.current) return false;
+    return deal.businessAId === myProfileId.current ? deal.confirmedA : deal.confirmedB;
   }, []);
 
   const dismissNotification = useCallback((index: number) => {
     setNotifications(prev => prev.filter((_, i) => i !== index));
   }, []);
+
+  // напоминания и просрочки считает сервер (pg_cron, run_deal_reminders) —
+  // клиенту ничего пересчитывать не нужно, оставлено для совместимости вызовов.
+  const checkDeadlines = useCallback(() => {}, []);
 
   const unreadChatsCount = data.chats.filter(c => c.unread).length;
 
@@ -260,7 +421,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     return data.deals.filter(d => {
-      if (d.businessA !== data.currentUser!.name && d.businessB !== data.currentUser!.name) return false;
       if (d.status === 'completed') return false;
       const dl = new Date(d.deadline);
       dl.setHours(0, 0, 0, 0);
@@ -271,9 +431,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppStateContext.Provider value={{
-      data, register, logout, createOffer, createDeal, confirmDeal, completeDeal,
-      extendDeadline, sendMessage, markChatRead, unreadChatsCount, urgentDealsCount,
-      notifications, dismissNotification, checkDeadlines,
+      data, loading, authError, register, login, logout, createOffer, createDeal,
+      confirmDeal, completeDeal, extendDeadline, sendMessage, markChatRead, myConfirmedSide,
+      unreadChatsCount, urgentDealsCount, notifications, dismissNotification, checkDeadlines,
     }}>
       {children}
     </AppStateContext.Provider>
